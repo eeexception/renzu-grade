@@ -50,7 +50,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_complete_release_with_windows_line_endings(self):
         result = release.validate_assets(self.assets, self.info)
-        self.assertEqual(len(result["assets"]), 4)
+        self.assertEqual(len(result["assets"]), 3)
         self.assertEqual(result["commit"], "a" * 40)
 
     def test_version_mismatch(self):
@@ -73,6 +73,11 @@ class ReleaseTests(unittest.TestCase):
 
     def test_unexpected_asset_blocks_release(self):
         (self.assets / "other-version.zip").write_bytes(b"unexpected")
+        with self.assertRaisesRegex(ValueError, "unexpected"):
+            release.validate_assets(self.assets, self.info)
+
+    def test_intel_macos_archive_blocks_release(self):
+        self.make_archive("renzu-grade-0.3.0-macos-x86_64.zip", "MacOS")
         with self.assertRaisesRegex(ValueError, "unexpected"):
             release.validate_assets(self.assets, self.info)
 

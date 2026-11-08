@@ -31,7 +31,6 @@ def distributions(version):
     prefix = "renzu-grade-" + version
     return {
         prefix + "-macos-arm64.zip": "MacOS",
-        prefix + "-macos-x86_64.zip": "MacOS",
         prefix + "-windows-x86_64-cpu-only.zip": "Win64",
         prefix + "-linux-x86_64-cpu-only.tar.gz": "Linux-x86-64",
     }

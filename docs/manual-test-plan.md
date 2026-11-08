@@ -7,6 +7,7 @@ management. Use a disposable project. Standalone tests do not certify the host.
 ## Installation and layout
 
 - [ ] Quit Resolve, build/test, install, restart. Find Renzu Grade in Effects / Color Grading.
+- [ ] macOS: verify the bundle is arm64-only and test on Apple Silicon with macOS 13+.
 - [ ] Windows x64: install the whole bundle under `C:\Program Files\Common Files\OFX\Plugins\`;
       confirm loading without a separately installed Visual C++ runtime.
 - [ ] Linux x86_64: install under `/usr/OFX/Plugins/`; check `ldd` for missing libraries

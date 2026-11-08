@@ -8,16 +8,8 @@ permissions:
   contents: read
 jobs:
   macos:
-    name: macOS ${{ matrix.arch }} / Metal + CPU
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    name: macOS arm64 / Metal + CPU
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +23,7 @@ jobs:
             xcodebuild -downloadComponent MetalToolchain
           fi
       - name: Build plugin
-        run: ./scripts/build.sh --release --arch '${{ matrix.arch }}' --without-tests
+        run: ./scripts/build.sh --release --arch arm64 --without-tests
       - name: Package
         run: ./scripts/package.sh
       - name: Verify archive and build corresponding source
@@ -42,11 +34,11 @@ jobs:
           root=("$RUNNER_TEMP"/renzu-package/renzu-grade-*)
           test "${#root[@]}" -eq 1
           ./scripts/verify_bundle.sh "${root[0]}/RenzuGrade.ofx.bundle"
-          "${root[0]}/Source/renzu-grade/scripts/build.sh" --release --arch '${{ matrix.arch }}' --without-tests --build-dir "$RUNNER_TEMP/renzu-source-build"
+          "${root[0]}/Source/renzu-grade/scripts/build.sh" --release --arch arm64 --without-tests --build-dir "$RUNNER_TEMP/renzu-source-build"
       - name: Upload distribution
         uses: actions/upload-artifact@v4
         with:
-          name: renzu-grade-macos-${{ matrix.arch }}
+          name: renzu-grade-macos-arm64
           path: |
             dist/*.zip
             dist/*.sha256

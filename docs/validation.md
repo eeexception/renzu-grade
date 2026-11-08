@@ -1,5 +1,9 @@
 # Implementation validation record
 
+Historical entries include Intel/universal build experiments. The current macOS
+target is Apple Silicon arm64 only; those older results do not describe current
+platform support.
+
 These checks were executed locally for the initial 0.1.0 implementation. This
 record is evidence of standalone checks, not a Resolve compatibility statement.
 

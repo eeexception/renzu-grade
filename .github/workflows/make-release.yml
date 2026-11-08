@@ -121,6 +121,6 @@ jobs:
             echo "Tag: $RELEASE_TAG"
             echo "Source commit: $GITHUB_SHA"
             echo "Dry run: $RELEASE_DRY_RUN; draft: $RELEASE_DRAFT"
-            echo 'All tests and all four platform distributions passed.'
+            echo 'All tests and all three platform distributions passed.'
             echo 'Checksums and commit provenance are in the release-preview artifact.'
           } >> "$GITHUB_STEP_SUMMARY"

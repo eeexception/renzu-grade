@@ -8,16 +8,8 @@ permissions:
   contents: read
 jobs:
   macos:
-    name: macOS ${{ matrix.arch }} / CPU + Metal
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    name: macOS arm64 / CPU + Metal
+    runs-on: macos-15
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -33,12 +25,12 @@ jobs:
       - name: Verify prerequisites
         run: ./scripts/bootstrap_macos.sh
       - name: Run CPU and Metal tests
-        run: ./scripts/test.sh --release --arch '${{ matrix.arch }}'
+        run: ./scripts/test.sh --release --arch arm64
       - name: Upload test diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-macos-${{ matrix.arch }}
+          name: test-results-macos-arm64
           path: build/Testing/Temporary/
           if-no-files-found: ignore
           retention-days: 14

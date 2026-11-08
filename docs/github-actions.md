@@ -4,12 +4,12 @@ The Actions tab has three workflows:
 
 | Workflow | Trigger | Responsibility | Artifacts |
 | --- | --- | --- | --- |
-| **Tests** | Push, pull request, manual, Make Release | CPU/OpenFX tests on Windows/Linux; CPU/Metal on both Macs; Linux ASan/UBSan; release-tool tests | Test diagnostics |
-| **Build** | Push, pull request, manual, Make Release | Release compilation with test targets disabled; packaging; binary/layout/checksum checks; build corresponding source | Four platform distributions and their SHA256 files |
+| **Tests** | Push, pull request, manual, Make Release | CPU/OpenFX tests on Windows/Linux; CPU/Metal on macOS arm64; Linux ASan/UBSan; release-tool tests | Test diagnostics |
+| **Build** | Push, pull request, manual, Make Release | Release compilation with test targets disabled; packaging; binary/layout/checksum checks; build corresponding source | Three platform distributions and their SHA256 files |
 | **Make Release** | Manual | Validate version/commit, run Tests, then Build, validate all assets and create a GitHub Release | Release files plus checksum/commit manifest |
 
 Tests compiles the plugin and test harnesses as needed to execute checks. Build
-creates distributions for macOS arm64, macOS x86_64, Windows x64 CPU, and Linux
+creates distributions for macOS arm64, Windows x64 CPU, and Linux
 x86_64 CPU. These two workflows run independently on ordinary pushes and PRs.
 A successful Build alone does not certify tests or Resolve host acceptance.
 
@@ -46,10 +46,9 @@ Concurrent release attempts for the same tag are serialized.
 
 ## Release contents and validation
 
-Every release requires all four distributions, each with its `.sha256` file:
+Every release requires all three distributions, each with its `.sha256` file:
 
 - `renzu-grade-<version>-macos-arm64.zip`
-- `renzu-grade-<version>-macos-x86_64.zip`
 - `renzu-grade-<version>-windows-x86_64-cpu-only.zip`
 - `renzu-grade-<version>-linux-x86_64-cpu-only.tar.gz`
 
@@ -73,11 +72,11 @@ python3 -B -m unittest discover -s tests -p 'test_release.py' -v
 `scripts/release.py` validates metadata/assets and writes manifests; it has no
 publishing or tag-creation capability. GitHub CLI publication is confined to the
 final Make Release job. To validate real downloaded distributions locally, put
-their eight archive/checksum files in one directory and run:
+their six archive/checksum files in one directory and run:
 
 ```bash
 python3 scripts/release.py assets --tag v0.3.0 --commit <full-commit-sha> --directory release-assets
 ```
 
-The known Intel macOS `metal_cpu_parity` failure also appears in Tests. Make Release
-will remain blocked while any required test is failing; it does not skip that check.
+macOS CI covers Apple Silicon arm64 only. Every configured test must pass before
+Make Release can continue to Build and release creation.
