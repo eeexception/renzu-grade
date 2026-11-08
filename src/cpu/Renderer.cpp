@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "renzu/Engine.h"
+#include "renzu/Half.h"
 #include <cstring>
 #include <future>
 #include <limits>
@@ -44,9 +45,9 @@ static float readChannel(const char *p, Depth d) {
         return v / 65535.f;
     }
     if (d == Depth::Half) {
-        _Float16 v;
+        std::uint16_t v;
         std::memcpy(&v, p, 2);
-        return float(v);
+        return halfToFloat(v);
     }
     float v;
     std::memcpy(&v, p, 4);
@@ -60,7 +61,7 @@ static void writeChannel(char *p, Depth d, float v) {
         auto q = std::uint16_t(std::lround(clampf(safe(v), 0, 1) * 65535));
         std::memcpy(p, &q, 2);
     } else if (d == Depth::Half) {
-        _Float16 q = _Float16(clampf(safe(v), -65504, 65504));
+        std::uint16_t q = floatToHalf(clampf(safe(v), -65504, 65504));
         std::memcpy(p, &q, 2);
     } else
         std::memcpy(p, &v, 4);

@@ -1,0 +1,136 @@
+name: Run All Releases
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag matching CMake VERSION (for example v0.3.0)'
+        required: true
+        type: string
+      draft:
+        description: 'Keep a new or existing draft unpublished'
+        type: boolean
+        default: true
+      prerelease:
+        description: 'Mark a newly created release as a prerelease'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Preview without creating/updating a tag or release'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      platform:
+        description: 'Internal platform selector'
+        type: string
+        default: all
+      tag:
+        description: 'Tag matching CMake VERSION (for example v0.3.0)'
+        required: true
+        type: string
+      draft:
+        description: 'Keep a new or existing draft unpublished'
+        type: boolean
+        default: true
+      prerelease:
+        description: 'Mark a newly created release as a prerelease'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Preview without creating/updating a tag or release'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    name: Validate platform, version and source commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      platform: ${{ steps.scope.outputs.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Validate release metadata and existing tag
+        id: scope
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          TARGET_PLATFORM: ${{ inputs.platform || 'all' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B scripts/publish_release.py --check --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --platform "$TARGET_PLATFORM"
+          echo "platform=$TARGET_PLATFORM" >> "$GITHUB_OUTPUT"
+
+  tests:
+    name: Tests
+    needs: validate
+    uses: ./.github/workflows/tests.yml
+    with:
+      platform: ${{ needs.validate.outputs.platform }}
+    permissions:
+      contents: read
+
+  build:
+    name: Build
+    needs: [validate, tests]
+    uses: ./.github/workflows/build.yml
+    with:
+      platform: ${{ needs.validate.outputs.platform }}
+    permissions:
+      contents: read
+
+  publish:
+    name: Validate assets and create or extend release
+    needs: [validate, tests, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Download selected distributions from this run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: renzu-grade-*
+          merge-multiple: true
+          path: release-assets
+      - name: Validate, preserve existing files and upload selected assets
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          TARGET_PLATFORM: ${{ needs.validate.outputs.platform }}
+          RELEASE_DRAFT: ${{ inputs.draft }}
+          RELEASE_PRERELEASE: ${{ inputs.prerelease }}
+          RELEASE_DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(--repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --platform "$TARGET_PLATFORM" --directory release-assets)
+          if [[ "$RELEASE_DRAFT" != true ]]; then args+=(--publish); fi
+          if [[ "$RELEASE_PRERELEASE" == true ]]; then args+=(--prerelease); fi
+          if [[ "$RELEASE_DRY_RUN" == true ]]; then args+=(--dry-run); fi
+          python3 -B scripts/publish_release.py "${args[@]}" | tee "$RUNNER_TEMP/release-result.json"
+      - name: Save release preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-preview
+          path: |
+            release-assets/release-manifest*.json
+            release-assets/SHA256SUMS*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Report result
+        run: |
+          {
+            echo 'Selected-platform tests, builds and release validation passed.'
+            echo '```json'
+            cat "$RUNNER_TEMP/release-result.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

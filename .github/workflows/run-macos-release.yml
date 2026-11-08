@@ -1,0 +1,33 @@
+name: Run macOS Release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag matching CMake VERSION (for example v0.3.0)'
+        required: true
+        type: string
+      draft:
+        description: 'Keep a new or existing draft unpublished'
+        type: boolean
+        default: true
+      prerelease:
+        description: 'Mark a newly created release as a prerelease'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Preview without creating/updating a tag or release'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  release:
+    uses: ./.github/workflows/make-release.yml
+    permissions:
+      contents: write
+    with:
+      platform: macos
+      tag: ${{ inputs.tag }}
+      draft: ${{ inputs.draft }}
+      prerelease: ${{ inputs.prerelease }}
+      dry_run: ${{ inputs.dry_run }}

@@ -1,0 +1,139 @@
+name: Run All Tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      platform:
+        description: 'Internal platform selector'
+        type: string
+        default: all
+permissions:
+  contents: read
+jobs:
+  scope:
+    name: Select platforms
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      platform: ${{ steps.scope.outputs.platform }}
+    steps:
+      - id: scope
+        env:
+          TARGET_PLATFORM: ${{ inputs.platform || 'all' }}
+        run: |
+          case "$TARGET_PLATFORM" in all|macos|windows|linux) ;; *) echo 'Unknown platform' >&2; exit 1;; esac
+          echo "platform=$TARGET_PLATFORM" >> "$GITHUB_OUTPUT"
+  macos:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'macos' }}
+    name: macOS arm64 / CPU + Metal
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Install build tools
+        run: brew install cmake ninja
+      - name: Ensure Metal compiler exists
+        run: |
+          if ! xcrun -sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+      - name: Verify prerequisites
+        run: ./scripts/bootstrap_macos.sh
+      - name: Run CPU and Metal tests
+        run: ./scripts/test.sh --release --arch arm64
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-macos-arm64
+          path: build/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  windows:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'windows' }}
+    name: Windows x64 / CPU
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Run CPU and OpenFX tests
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -RunTests
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-windows-x86_64
+          path: build-windows/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  linux:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'linux' }}
+    name: Linux x86_64 / CPU / glibc 2.28
+    runs-on: ubuntu-22.04
+    container: quay.io/pypa/manylinux_2_28_x86_64:latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Run CPU and OpenFX tests
+        run: ./scripts/build-linux.sh --test
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-linux-x86_64
+          path: build-linux/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  linux-sanitizers:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'linux' }}
+    name: Linux CPU / ASan + UBSan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Run with sanitizers
+        run: ./scripts/build-linux.sh --debug --sanitize --test --build-dir build-linux-asan
+      - name: Upload sanitizer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-linux-sanitizers
+          path: build-linux-asan/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  release-tools:
+    needs: scope
+    name: Release metadata and archive validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Test release checks
+        run: python3 -B -m unittest discover -s tests -p 'test_release.py' -v

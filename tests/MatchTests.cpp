@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include "Platform.h"
 #include "renzu/Match.h"
 #include <chrono>
 #include <fstream>
 #include <future>
 #include <iostream>
 #include <stdexcept>
+#ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 using namespace renzu;
 int checks = 0;
 void require(bool value, const char *message) {
@@ -14,7 +17,7 @@ void require(bool value, const char *message) {
     if (!value)
         throw std::runtime_error(message);
 }
-void near(double a, double b, double tolerance, const char *message) {
+void checkNear(double a, double b, double tolerance, const char *message) {
     require(std::abs(a - b) <= tolerance, message);
 }
 struct Scratch {
@@ -47,8 +50,19 @@ double chromaError(const std::vector<V3> &a, const std::vector<V3> &b) {
     }
     return e / a.size();
 }
-int main() {
+#ifdef _WIN32
+int wmain(int argc, wchar_t **argv) {
+#else
+int main(int argc, char **argv) {
+#endif
     try {
+        if (argc == 3 && std::filesystem::path(argv[1]) == "--save-reference") {
+            Settings s;
+            s.space = 2;
+            ReferenceStore(std::filesystem::path(argv[2]))
+                .save(makeReference(ramp(), s, "Child process", 0));
+            return 0;
+        }
         auto input = ramp();
         Settings linear;
         linear.space = 2;
@@ -56,9 +70,9 @@ int main() {
             for (int to = 0; to < 3; ++to) {
                 V3 c{-.1, .3, 1.2};
                 auto roundtrip = convertLinear(convertLinear(c, from, to), to, from);
-                near(c.r, roundtrip.r, 2.e-6, "working primary roundtrip r");
-                near(c.g, roundtrip.g, 2.e-6, "working primary roundtrip g");
-                near(c.b, roundtrip.b, 2.e-6, "working primary roundtrip b");
+                checkNear(c.r, roundtrip.r, 2.e-6, "working primary roundtrip r");
+                checkNear(c.g, roundtrip.g, 2.e-6, "working primary roundtrip g");
+                checkNear(c.b, roundtrip.b, 2.e-6, "working primary roundtrip b");
             }
         Settings look = linear;
         look.temperature = 28;
@@ -67,18 +81,18 @@ int main() {
         auto reference = makeReference(input, look, "Камера A — общий", 42.5);
         require(reference.pixels.size() == maxReferenceSamples, "reference sample budget");
         auto expected = gradeSamples(input, look);
-        near(reference.pixels[300].r, expected[300].r, 0, "reference stores graded output");
+        checkNear(reference.pixels[300].r, expected[300].r, 0, "reference stores graded output");
         std::vector<V3> target = input;
         for (auto &c : target)
             c = mul(c, .5);
         auto match = matchReference(target, linear, reference, MatchMode::WBAndExposure);
         require(match.exposureMatched && match.whiteBalanceMatched, "WB and exposure fit applied");
-        near(match.settings.exposure, 1.65, .025, "reference relative exposure");
-        near(match.settings.temperature, 28, 1, "reference warmth preserved");
-        near(match.settings.tint, -11, 1, "reference tint preserved");
+        checkNear(match.settings.exposure, 1.65, .025, "reference relative exposure");
+        checkNear(match.settings.temperature, 28, 1, "reference warmth preserved");
+        checkNear(match.settings.tint, -11, 1, "reference tint preserved");
         auto rendered = gradeSamples(target, match.settings);
         auto resultStats = analyze(rendered, 2), refStats = analyze(reference.pixels, 2);
-        near(std::log2(resultStats.median / refStats.median), 0, .015, "matched median");
+        checkNear(std::log2(resultStats.median / refStats.median), 0, .015, "matched median");
         require(chromaError(rendered, reference.pixels) < .004, "matched chromaticity");
         for (auto cast : {std::array<double, 3>{-24, 12, -1}, {22, -18, .4}, {-10, -20, -.5}}) {
             Settings observed = linear;
@@ -92,15 +106,15 @@ int main() {
             auto corrected = gradeSamples(camera, correction.settings);
             require(chromaError(corrected, reference.pixels) < .006,
                     "warm/cool/green/magenta camera cast corrected");
-            near(std::log2(analyze(corrected, 2).median / refStats.median), 0, .015,
-                 "camera cast exposure corrected");
+            checkNear(std::log2(analyze(corrected, 2).median / refStats.median), 0, .015,
+                      "camera cast exposure corrected");
         }
         auto expOnly = matchReference(target, linear, reference, MatchMode::Exposure);
         require(expOnly.exposureMatched && !expOnly.whiteBalanceMatched, "exposure only mode");
-        near(expOnly.settings.temperature, 0, 0, "exposure mode preserves temperature");
+        checkNear(expOnly.settings.temperature, 0, 0, "exposure mode preserves temperature");
         auto wbOnly = matchReference(target, linear, reference, MatchMode::WhiteBalance);
         require(wbOnly.whiteBalanceMatched && !wbOnly.exposureMatched, "WB only mode");
-        near(wbOnly.settings.exposure, 0, 0, "WB mode preserves exposure");
+        checkNear(wbOnly.settings.exposure, 0, 0, "WB mode preserves exposure");
         Settings manual = linear;
         manual.shadows = .25;
         manual.midtones = -.2;
@@ -111,10 +125,10 @@ int main() {
         manual.saturation = 1.1;
         manual.vibrance = 10;
         auto retained = matchReference(target, manual, reference, MatchMode::WBAndExposure);
-        near(retained.settings.shadows, manual.shadows, 0, "match leaves shadow control");
-        near(retained.settings.contrast, manual.contrast, 0, "match leaves contrast");
-        near(retained.settings.saturation, manual.saturation, 0, "match leaves saturation");
-        near(retained.settings.pivot, manual.pivot, 0, "match leaves pivot");
+        checkNear(retained.settings.shadows, manual.shadows, 0, "match leaves shadow control");
+        checkNear(retained.settings.contrast, manual.contrast, 0, "match leaves contrast");
+        checkNear(retained.settings.saturation, manual.saturation, 0, "match leaves saturation");
+        checkNear(retained.settings.pivot, manual.pivot, 0, "match leaves pivot");
         for (int space = 0; space < 3; ++space) {
             Settings s = linear;
             s.space = space;
@@ -122,13 +136,13 @@ int main() {
             for (auto c : target)
                 in.push_back(convertLinear(c, 2, space));
             auto cross = matchReference(in, s, reference, MatchMode::WBAndExposure);
-            near(cross.settings.exposure, 1.65, .025, "cross encoding exposure");
-            near(cross.settings.temperature, 28, 1, "cross encoding temperature");
+            checkNear(cross.settings.exposure, 1.65, .025, "cross encoding exposure");
+            checkNear(cross.settings.temperature, 28, 1, "cross encoding temperature");
         }
         auto identical = makeReference(input, linear, "Same", 0);
         auto neutral = matchReference(input, linear, identical, MatchMode::WBAndExposure);
-        near(neutral.settings.exposure, 0, 1.e-5, "identity reference exposure");
-        near(neutral.settings.temperature, 0, .01, "identity reference WB");
+        checkNear(neutral.settings.exposure, 0, 1.e-5, "identity reference exposure");
+        checkNear(neutral.settings.temperature, 0, .01, "identity reference WB");
         auto stage = std::vector<V3>(4096, {.4, .005, .01});
         auto stageRef = makeReference(stage, linear, "Stage", 1);
         auto rejected = matchReference(stage, linear, stageRef, MatchMode::WhiteBalance);
@@ -145,12 +159,12 @@ int main() {
         auto outliers = target;
         outliers[0] = {10000, 10000, 10000};
         auto robust = matchReference(outliers, linear, reference, MatchMode::Exposure);
-        near(robust.settings.exposure, expOnly.settings.exposure, .02,
-             "isolated highlight does not drive match");
-        auto far = target;
-        for (auto &c : far)
+        checkNear(robust.settings.exposure, expOnly.settings.exposure, .02,
+                  "isolated highlight does not drive match");
+        auto distantTarget = target;
+        for (auto &c : distantTarget)
             c = mul(c, .0001);
-        auto bounded = matchReference(far, linear, reference, MatchMode::Exposure);
+        auto bounded = matchReference(distantTarget, linear, reference, MatchMode::Exposure);
         require(bounded.settings.exposure <= 5, "exposure remains bounded");
         require(bounded.exposureMatched && bounded.limited,
                 "unreachable reference reports a bounded correction");
@@ -159,7 +173,14 @@ int main() {
         require(!matchReference(target, invalid, reference, MatchMode::WBAndExposure).applied(),
                 "invalid manual values rejected");
         Scratch scratch;
-        ReferenceStore store(scratch.path / "library");
+        // Exercise wide Windows paths, spaces and UTF-8 Unix paths as well as
+        // non-ASCII reference names. Never touch the real user library.
+        ReferenceStore store(scratch.path / std::filesystem::u8path("Референсы A"));
+        {
+            test::Environment isolated("RENZU_REFERENCE_DIRECTORY", store.directory());
+            require(ReferenceStore::defaultDirectory() == store.directory(),
+                    "reference directory override supports Unicode and spaces");
+        }
         require(store.list().empty(), "new library empty");
         require(!std::filesystem::exists(store.directory()), "listing does not create library");
         auto saved = store.save(reference);
@@ -168,7 +189,7 @@ int main() {
         auto decoded = deserializeReference(encoded);
         require(decoded.name == saved.name && decoded.id == saved.id && decoded.time == saved.time,
                 "portable reference metadata");
-        near(decoded.pixels[0].r, saved.pixels[0].r, 0, "lossless float serialization");
+        checkNear(decoded.pixels[0].r, saved.pixels[0].r, 0, "lossless float serialization");
         ReferenceStore reopened(store.directory());
         auto loaded = reopened.load(0);
         require(loaded.id == saved.id, "latest pointer survives reopening store");
@@ -204,6 +225,13 @@ int main() {
         // Separate processes do not share the C++ mutex. The filesystem lock
         // must still serialize allocation and preserve both newly saved slots.
         auto countBefore = store.list().size();
+#ifdef _WIN32
+        auto executable = std::filesystem::absolute(argv[0]);
+        test::ReferenceWriter first(executable, store.directory()),
+            secondWriter(executable, store.directory());
+        require(first.wait(), "first process reference writer completed");
+        require(secondWriter.wait(), "second process reference writer completed");
+#else
         pid_t children[2];
         for (auto &child : children) {
             child = fork();
@@ -223,6 +251,7 @@ int main() {
                         WEXITSTATUS(status) == 0,
                     "process reference writer completed");
         }
+#endif
         require(store.list().size() == countBefore + 2,
                 "cross-process save allocation preserves both entries");
         while (store.list().size() < referenceSlots)

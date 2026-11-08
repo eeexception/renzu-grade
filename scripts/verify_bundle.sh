@@ -14,7 +14,7 @@ plutil -lint "$plist"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" == org.renzu.grade ]] || fail "Wrong bundle identifier"
 file "$binary"
 architectures="$(lipo -archs "$binary")"
-[[ "$architectures" == *arm64* || "$architectures" == *x86_64* ]] || fail "No supported architecture"
+[[ "$architectures" == arm64 ]] || fail "Expected an Apple Silicon (arm64-only) bundle."
 for arch in $architectures; do
  symbols="$(nm -arch "$arch" -gU "$binary")"
  [[ "$symbols" == *' _OfxGetNumberOfPlugins'* && "$symbols" == *' _OfxGetPlugin'* ]] || fail "Missing OpenFX entry points for $arch"

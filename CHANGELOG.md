@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- Expose 12 manual GitHub launchers: macOS/Windows/Linux/All for tests, builds
+  and releases. Scope plugin jobs to the selected platform; retain automatic
+  All Tests/Builds on pushes and pull requests.
+- Allow platform releases to extend one version release from the same commit,
+  preserving uploaded archives, notes and publication state. Add per-platform
+  manifests/checksums and publication dry-run/retry coverage.
+
+- Separate GitHub workflows into Tests, Build and manual Make Release. Require
+  selected-platform tests and builds for a release; validate version/tag,
+  checksums, bundle layout and corresponding source before uploading assets.
+- Add draft/prerelease and dry-run release options, combined SHA256SUMS and
+  source-commit manifests. Keep test execution separate from packaging.
+- Target macOS builds, bundle verification, CI and release assets exclusively at
+  Apple Silicon arm64. Remove Intel/universal builds and Intel Metal test jobs.
+- Add Windows x64 (MSVC, static CRT) and Linux x86_64 CPU-only OFX bundles,
+  distribution archives, build scripts and installation instructions.
+- Add Windows/Linux GitHub Actions builds and tests, archive/load verification,
+  corresponding-source rebuilds and Linux ASan/UBSan coverage. Build Linux
+  distributions against glibc 2.28 with a private static C++ runtime.
+- Port reference library locks, atomic replacement, Unicode paths and contract
+  test loading to Windows; respect XDG_DATA_HOME on Linux.
+- Replace compiler-specific CPU half-float conversion with portable IEEE binary16
+  conversion and exhaustive encoding/rounding tests.
 - License project code under GNU GPL version 3 only; retain the BSD-3-Clause
   license and notices for the official OpenFX headers.
 - Include corresponding source and build scripts in distribution archives.

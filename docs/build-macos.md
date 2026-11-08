@@ -1,6 +1,7 @@
 # Building, installation and distribution on macOS
 
-Use macOS 13+, full Xcode (C++17 compiler and macOS SDK), CMake 3.24+ and Ninja.
+Use an Apple Silicon Mac (arm64) with macOS 13+, full Xcode (C++17 compiler and
+macOS SDK), CMake 3.24+ and Ninja. Intel Macs are not supported.
 Xcode must be selected via `xcode-select`. Modern Xcode may require downloading
 its separate Metal component:
 
@@ -18,15 +19,12 @@ must be explicit, using a separate directory:
 
 ```bash
 ./scripts/test.sh --cpu-only --debug --build-dir build-cpu
-./scripts/build.sh --release --arch x86_64 --build-dir build-intel
-./scripts/build.sh --release --arch universal --build-dir build-universal
+./scripts/build.sh --release --arch arm64 --without-tests --build-dir build-arm64
 ```
 
-A Universal Binary is compiled from the same CMake target with
-`CMAKE_OSX_ARCHITECTURES=arm64;x86_64`. The metallib is a GPU resource, not a
-CPU architecture slice. An Intel-only test executable on Apple Silicon may need
-Rosetta; running tests on the actual target architecture is preferred. Universal
-compilation alone does not validate Intel GPU execution.
+The only supported architecture is arm64, including CPU-only development builds.
+CMake and the build/bundle-verification scripts reject Intel and universal
+targets. The metallib is a GPU resource, not a CPU architecture slice.
 
 Equivalent direct CMake:
 
@@ -149,5 +147,6 @@ then re-verify and package. No credentials or signing service is part of this re
 - **Button cannot access a frame:** let the viewer update, then press that same
   action again. For WB, select Auto again. No separate capture controls are needed.
 
-Linux/non-Apple C++ builds may run the core and C-suite tests using explicit
-`-DRENZU_ENABLE_METAL=OFF`; macOS deployment scripts remain macOS-only.
+For CPU-only Windows/Linux distributions, see [Windows](build-windows.md) and
+[Linux](build-linux.md). Metal defaults to OFF on those platforms. The macOS shell
+build/install/package scripts remain macOS-only.

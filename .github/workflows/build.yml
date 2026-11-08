@@ -1,0 +1,147 @@
+name: Run All Builds
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      platform:
+        description: 'Internal platform selector'
+        type: string
+        default: all
+permissions:
+  contents: read
+jobs:
+  scope:
+    name: Select platforms
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      platform: ${{ steps.scope.outputs.platform }}
+    steps:
+      - id: scope
+        env:
+          TARGET_PLATFORM: ${{ inputs.platform || 'all' }}
+        run: |
+          case "$TARGET_PLATFORM" in all|macos|windows|linux) ;; *) echo 'Unknown platform' >&2; exit 1;; esac
+          echo "platform=$TARGET_PLATFORM" >> "$GITHUB_OUTPUT"
+  macos:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'macos' }}
+    name: macOS arm64 / Metal + CPU
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Install build tools
+        run: brew install cmake ninja
+      - name: Ensure Metal compiler exists
+        run: |
+          if ! xcrun -sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+      - name: Build plugin
+        run: ./scripts/build.sh --release --arch arm64 --without-tests
+      - name: Package
+        run: ./scripts/package.sh
+      - name: Verify archive and build corresponding source
+        run: |
+          (cd dist && shasum -a 256 -c ./*.sha256)
+          mkdir -p "$RUNNER_TEMP/renzu-package"
+          unzip -q dist/*.zip -d "$RUNNER_TEMP/renzu-package"
+          root=("$RUNNER_TEMP"/renzu-package/renzu-grade-*)
+          test "${#root[@]}" -eq 1
+          ./scripts/verify_bundle.sh "${root[0]}/RenzuGrade.ofx.bundle"
+          "${root[0]}/Source/renzu-grade/scripts/build.sh" --release --arch arm64 --without-tests --build-dir "$RUNNER_TEMP/renzu-source-build"
+      - name: Upload distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: renzu-grade-macos-arm64
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'windows' }}
+    name: Windows x64 / CPU
+    runs-on: windows-2022
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Build and package
+        run: ./scripts/build-windows.ps1 -WithoutTests -Package
+      - name: Verify archive and build corresponding source
+        run: |
+          $archives = @(Get-ChildItem build-windows/dist/*.zip)
+          if ($archives.Count -ne 1) { throw 'Expected exactly one Windows archive.' }
+          $archive = $archives[0]
+          $expected = (Get-Content ($archive.FullName + '.sha256') -Raw).Trim().Split()[0]
+          if ((Get-FileHash $archive.FullName -Algorithm SHA256).Hash -ne $expected) {
+            throw 'Archive checksum mismatch.'
+          }
+          Expand-Archive $archive.FullName -DestinationPath "$env:RUNNER_TEMP/renzu-package"
+          $root = Join-Path "$env:RUNNER_TEMP/renzu-package" $archive.BaseName
+          foreach ($path in @('INSTALL.txt', 'LICENSE', 'OPENFX-LICENSE.md', 'Source/renzu-grade/CMakeLists.txt', 'RenzuGrade.ofx.bundle/Contents/Win64/RenzuGrade.ofx')) {
+            if (-not (Test-Path (Join-Path $root $path))) { throw "Missing packaged file: $path" }
+          }
+          & "$root/Source/renzu-grade/scripts/build-windows.ps1" -WithoutTests -BuildDirectory "$env:RUNNER_TEMP/renzu-source-build"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged source failed to build.' }
+      - name: Upload distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: renzu-grade-windows-x86_64-cpu-only
+          path: |
+            build-windows/dist/*.zip
+            build-windows/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  linux:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'linux' }}
+    name: Linux x86_64 / CPU / glibc 2.28
+    runs-on: ubuntu-22.04
+    container: quay.io/pypa/manylinux_2_28_x86_64:latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Build and package
+        run: ./scripts/build-linux.sh --without-tests --package
+      - name: Verify Linux binary compatibility
+        run: ./scripts/verify-linux.sh build-linux/RenzuGrade.ofx.bundle 2.28
+      - name: Verify archive and build corresponding source
+        run: |
+          (cd build-linux/dist && sha256sum --check ./*.sha256)
+          mkdir -p "$RUNNER_TEMP/renzu-package"
+          tar -xzf build-linux/dist/*.tar.gz -C "$RUNNER_TEMP/renzu-package"
+          root=("$RUNNER_TEMP"/renzu-package/renzu-grade-*)
+          test "${#root[@]}" -eq 1
+          for path in INSTALL.txt LICENSE OPENFX-LICENSE.md Source/renzu-grade/CMakeLists.txt; do
+            test -s "${root[0]}/$path"
+          done
+          ./scripts/verify-linux.sh "${root[0]}/RenzuGrade.ofx.bundle" 2.28
+          "${root[0]}/Source/renzu-grade/scripts/build-linux.sh" --without-tests --build-dir "$RUNNER_TEMP/renzu-source-build"
+      - name: Upload distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: renzu-grade-linux-x86_64-cpu-only
+          path: |
+            build-linux/dist/*.tar.gz
+            build-linux/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14

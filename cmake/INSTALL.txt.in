@@ -1,0 +1,13 @@
+Renzu Grade @PROJECT_VERSION@ -- @RENZU_PACKAGE_PLATFORM@ x86_64, CPU only
+
+@RENZU_INSTALL_INSTRUCTIONS@
+The plugin processes images on the CPU; CUDA, OpenCL and Metal are not included.
+Resolve's own GPU and system requirements still apply. New effect instances
+expect DaVinci Wide Gamut / DaVinci Intermediate; see README.md.
+
+License: GNU GPL version 3 only. Corresponding source, tests, vendored OpenFX
+headers and build instructions are included under Source/renzu-grade/.
+Build compiler: @CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@
+
+Standalone tests do not certify operation inside DaVinci Resolve.
+Use docs/manual-test-plan.md for host verification.

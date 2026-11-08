@@ -1,11 +1,17 @@
 # Resolve host acceptance checklist (0.3.0)
 
-Record Resolve edition/build, macOS, GPU, plugin architecture and project color
+Record Resolve edition/build, operating system/version, GPU, plugin architecture,
+CPU/Metal rendering backend and project color
 management. Use a disposable project. Standalone tests do not certify the host.
 
 ## Installation and layout
 
 - [ ] Quit Resolve, build/test, install, restart. Find Renzu Grade in Effects / Color Grading.
+- [ ] macOS: verify the bundle is arm64-only and test on Apple Silicon with macOS 13+.
+- [ ] Windows x64: install the whole bundle under `C:\Program Files\Common Files\OFX\Plugins\`;
+      confirm loading without a separately installed Visual C++ runtime.
+- [ ] Linux x86_64: install under `/usr/OFX/Plugins/`; check `ldd` for missing libraries
+      and record the distribution/glibc version.
 - [ ] At defaults, node bypass and effect output agree.
 - [ ] Order: Auto -> WB -> Exposure -> Contrast -> Match / Reference -> HDR -> Vibrance -> Saturation.
 - [ ] WB dropdown contains only As Shot / Auto / Custom.
@@ -55,6 +61,8 @@ management. Use a disposable project. Standalone tests do not certify the host.
 - [ ] For WB Auto's deferred path, select Auto again after the viewer updates.
 - [ ] A different frame does not satisfy a pending operation; capture alone never changes sliders.
 - [ ] Compare CPU-only and Metal builds, quitting Resolve between replacements.
+- [ ] Windows/Linux: confirm CPU rendering, Auto, WB picker and Match in the real host.
+      CPU-only here refers to the plugin; Resolve still needs its own supported GPU.
 - [ ] Verify alpha, signed/nonzero bounds and representative RGB/RGBA media where the host supports them.
 - [ ] Test 1080p, UHD/4K and 6K playback, scrubbing, cache/proxy modes, export and cancellation.
 - [ ] Test several instances and a long export; inspect memory growth, crashes and GPU errors.

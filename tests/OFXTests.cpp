@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // An in-process, host-independent contract test. This is not a Resolve emulator.
+#include "Platform.h"
 #include "renzu/Controls.h"
 #include "renzu/Match.h"
 #include "renzu/Photographic.h"
@@ -7,7 +8,6 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>
-#include <dlfcn.h>
 #include <filesystem>
 #include <iostream>
 #include <map>
@@ -27,21 +27,11 @@ struct TestReferenceLibrary {
         std::filesystem::temp_directory_path() /
         ("renzu-ofx-reference-test-" +
          std::to_string(std::chrono::high_resolution_clock::now().time_since_epoch().count()));
-    std::string previous;
-    bool hadPrevious = false;
+    test::Environment environment{"RENZU_REFERENCE_DIRECTORY", root / "library"};
     TestReferenceLibrary() {
-        if (auto p = std::getenv("RENZU_REFERENCE_DIRECTORY")) {
-            previous = p;
-            hadPrevious = true;
-        }
         std::filesystem::create_directories(root);
-        setenv("RENZU_REFERENCE_DIRECTORY", (root / "library").c_str(), 1);
     }
     ~TestReferenceLibrary() {
-        if (hadPrevious)
-            setenv("RENZU_REFERENCE_DIRECTORY", previous.c_str(), 1);
-        else
-            unsetenv("RENZU_REFERENCE_DIRECTORY");
         std::error_code ignored;
         std::filesystem::remove_all(root, ignored);
     }
@@ -364,15 +354,17 @@ void image(Clip &c, float *data) {
     ps(p, kOfxImageEffectPropComponents, 0, kOfxImageComponentRGBA);
 }
 } // namespace
+#ifdef _WIN32
+int wmain(int argc, wchar_t **argv) {
+#else
 int main(int argc, char **argv) {
+#endif
     try {
         TestReferenceLibrary referenceLibrary;
         require(argc == 2, "plugin path");
-        void *lib = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL);
-        if (!lib)
-            throw std::runtime_error(dlerror());
-        auto count = (int (*)())dlsym(lib, "OfxGetNumberOfPlugins");
-        auto getPlugin = (OfxPlugin * (*)(int)) dlsym(lib, "OfxGetPlugin");
+        test::SharedLibrary lib(argv[1]);
+        auto count = lib.symbol<int (*)()>("OfxGetNumberOfPlugins");
+        auto getPlugin = lib.symbol<OfxPlugin *(*)(int)>("OfxGetPlugin");
         require(count && getPlugin && count() == 1, "exports");
         auto *plugin = getPlugin(0);
         require(plugin && getPlugin(1) == nullptr && getPlugin(-1) == nullptr,
@@ -418,6 +410,17 @@ int main(int argc, char **argv) {
         require(plugin->mainEntry(kOfxActionDescribe, eh(descriptor), nullptr, nullptr) ==
                     kOfxStatOK,
                 "describe");
+#ifdef RENZU_EXPECT_CPU_ONLY
+        for (const char *capability :
+             {"OfxImageEffectPropMetalRenderSupported", "OfxImageEffectPropMetalTextureSupported",
+              "OfxImageEffectPropCudaRenderSupported", "OfxImageEffectPropOpenCLRenderSupported",
+              "OfxImageEffectPropOpenGLRenderSupported"}) {
+            auto it = descriptor.props.strings.find(capability);
+            require(it == descriptor.props.strings.end() || it->second.empty() ||
+                        it->second[0] != "true",
+                    "CPU-only plugin must not advertise GPU rendering");
+        }
+#endif
         Props context;
         ps(ph(context), kOfxImageEffectPropContext, 0, kOfxImageEffectContextFilter);
         require(plugin->mainEntry(kOfxImageEffectActionDescribeInContext, eh(descriptor),
@@ -826,7 +829,6 @@ int main(int argc, char **argv) {
         std::cout << "PASS: " << checks
                   << " OpenFX registration, controls, render, selected-frame analysis, "
                      "persistence, undo grouping and capture assertions\n";
-        dlclose(lib);
         return 0;
     } catch (const std::exception &e) {
         std::cerr << "FAIL: " << e.what() << " after " << checks << " assertions\n";

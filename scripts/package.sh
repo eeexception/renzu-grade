@@ -46,5 +46,5 @@ archive="$RENZU_ROOT/dist/$name.zip"
 [[ ! -e "$archive" ]] || fail "Archive exists; move it aside before packaging: $archive"
 ditto -c -k --norsrc --noextattr --noqtn --keepParent "$stage/$name" "$archive"
 unzip -t "$archive"
-shasum -a 256 "$archive" > "$archive.sha256"
+(cd "$RENZU_ROOT/dist" && shasum -a 256 "$name.zip" > "$name.zip.sha256")
 echo "Created $archive; nothing uploaded."
