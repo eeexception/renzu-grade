@@ -23,5 +23,9 @@ See [Windows](docs/build-windows.md) and [Linux](docs/build-linux.md) for toolch
 packaging and the CI checks. Windows/Linux distribution packages must be Release
 builds without sanitizers. No Resolve installation is needed for standalone tests.
 
+CI is split into [Tests, Build and Make Release](docs/github-actions.md). Run
+release-tool checks with `python3 -B -m unittest discover -s tests -p 'test_release.py'`.
+Python 3.9+ is used only by release automation, not plugin compilation or runtime.
+
 Do not commit generated bundles, developer machine paths, sample footage without
 permission, credentials, or binary dependencies. Keep PRs small enough to review.

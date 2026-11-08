@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Separate GitHub workflows into Tests, Build and manual Make Release. Require
+  tests and all four platform builds for a release; validate version/tag,
+  checksums, bundle layout and corresponding source before uploading assets.
+- Add draft/prerelease and dry-run release options, combined SHA256SUMS and
+  source-commit manifests. Keep test execution separate from packaging.
 - Add Windows x64 (MSVC, static CRT) and Linux x86_64 CPU-only OFX bundles,
   distribution archives, build scripts and installation instructions.
 - Add Windows/Linux GitHub Actions builds and tests, archive/load verification,

@@ -1,0 +1,120 @@
+name: Tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }} / CPU + Metal
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Install build tools
+        run: brew install cmake ninja
+      - name: Ensure Metal compiler exists
+        run: |
+          if ! xcrun -sdk macosx metal --version; then
+            xcodebuild -downloadComponent MetalToolchain
+          fi
+      - name: Verify prerequisites
+        run: ./scripts/bootstrap_macos.sh
+      - name: Run CPU and Metal tests
+        run: ./scripts/test.sh --release --arch '${{ matrix.arch }}'
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-macos-${{ matrix.arch }}
+          path: build/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  windows:
+    name: Windows x64 / CPU
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Run CPU and OpenFX tests
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -RunTests
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-windows-x86_64
+          path: build-windows/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  linux:
+    name: Linux x86_64 / CPU / glibc 2.28
+    runs-on: ubuntu-22.04
+    container: quay.io/pypa/manylinux_2_28_x86_64:latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Run CPU and OpenFX tests
+        run: ./scripts/build-linux.sh --test
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-linux-x86_64
+          path: build-linux/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  linux-sanitizers:
+    name: Linux CPU / ASan + UBSan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Run with sanitizers
+        run: ./scripts/build-linux.sh --debug --sanitize --test --build-dir build-linux-asan
+      - name: Upload sanitizer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-linux-sanitizers
+          path: build-linux-asan/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  release-tools:
+    name: Release metadata and archive validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Test release checks
+        run: python3 -B -m unittest discover -s tests -p 'test_release.py' -v

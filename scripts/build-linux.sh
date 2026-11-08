@@ -5,6 +5,7 @@ source "$(dirname "$0")/common.sh"
 config=Release
 build_dir="${RENZU_BUILD_DIR:-$RENZU_ROOT/build-linux}"
 run_tests=0
+build_tests=ON
 package=0
 sanitize=OFF
 while [[ $# -gt 0 ]]; do
@@ -13,17 +14,19 @@ while [[ $# -gt 0 ]]; do
   --release) config=Release; shift;;
   --build-dir) [[ $# -ge 2 ]] || fail "--build-dir needs a directory"; build_dir="$2"; shift 2;;
   --test) run_tests=1; shift;;
-  --package) package=1; run_tests=1; shift;;
+  --package) package=1; shift;;
+  --without-tests) build_tests=OFF; shift;;
   --sanitize) sanitize=ON; shift;;
   *) fail "Unknown option: $1";;
  esac
 done
+[[ "$run_tests" != 1 || "$build_tests" == ON ]] || fail "--test cannot be combined with --without-tests."
 if [[ "$package" == 1 ]]; then
  [[ "$config" == Release && "$sanitize" == OFF ]] || fail "Distribution packages require Release without sanitizers."
 fi
 for tool in cmake make ctest cpack; do require_tool "$tool"; done
 cmake -S "$RENZU_ROOT" -B "$build_dir" -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE="$config" \
- -DRENZU_ENABLE_METAL=OFF -DRENZU_BUILD_TESTS=ON -DRENZU_SANITIZE="$sanitize" \
+ -DRENZU_ENABLE_METAL=OFF -DRENZU_BUILD_TESTS="$build_tests" -DRENZU_SANITIZE="$sanitize" \
  -DOFX_SDK_ROOT="${OFX_SDK_ROOT:-$RENZU_ROOT/third_party/ofx}"
 cmake --build "$build_dir" --parallel
 if [[ "$run_tests" == 1 ]]; then

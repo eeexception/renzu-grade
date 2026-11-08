@@ -5,23 +5,26 @@ param(
     [string]$Configuration = 'Release',
     [string]$BuildDirectory = '',
     [switch]$RunTests,
+    [switch]$WithoutTests,
     [switch]$Package
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($env:OS -ne 'Windows_NT') { throw 'This script requires Windows x64.' }
 if ($Package -and $Configuration -ne 'Release') { throw 'Distribution packages require Release.' }
+if ($RunTests -and $WithoutTests) { throw '-RunTests cannot be combined with -WithoutTests.' }
+$renzuBuildTests = if ($WithoutTests) { 'OFF' } else { 'ON' }
 $renzuRoot = Split-Path $PSScriptRoot -Parent
 if (-not $BuildDirectory) { $BuildDirectory = Join-Path $renzuRoot 'build-windows' }
 foreach ($tool in @('cmake', 'ctest', 'cpack')) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "Missing prerequisite: $tool" }
 }
 & cmake -S $renzuRoot -B $BuildDirectory -G 'Visual Studio 17 2022' -A x64 `
-    -DRENZU_ENABLE_METAL=OFF -DRENZU_BUILD_TESTS=ON
+    -DRENZU_ENABLE_METAL=OFF "-DRENZU_BUILD_TESTS=$renzuBuildTests"
 if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
 & cmake --build $BuildDirectory --config $Configuration --parallel
 if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
-if ($RunTests -or $Package) {
+if ($RunTests) {
     & ctest --test-dir $BuildDirectory -C $Configuration --output-on-failure --no-tests=error
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed; no package will be created.' }
 }

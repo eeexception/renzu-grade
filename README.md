@@ -92,7 +92,7 @@ and Resolve's own GPU/system requirements still apply. Host acceptance on each
 system remains separate from standalone testing.
 
 **Windows/Linux downloads:** open the repository's **Actions** tab, select a
-successful **Windows and Linux CPU build and tests** run, and download the
+successful **Build** run, and download the
 appropriate distribution under **Artifacts**. Extract the artifact, verify the
 included SHA256 checksum if desired, then extract the inner `.zip` (Windows) or
 `.tar.gz` (Linux). Follow its `INSTALL.txt`; copy the entire `.ofx.bundle` folder,
@@ -111,11 +111,18 @@ Quick source builds (CMake 3.24+ and the platform compiler):
 ```
 
 Packages appear in `build-windows/dist/` or `build-linux/dist/` with SHA256 files.
-GitHub Actions runs all four CPU/OpenFX suites on both systems for pushes and pull
-requests, tests the packaged binaries, and rebuilds/tests the accompanying source.
-Linux also has an ASan/UBSan job. Published Linux binaries are built against glibc
+The **Tests** workflow runs CPU/OpenFX suites on both systems for pushes and pull
+requests, plus macOS CPU/Metal and Linux ASan/UBSan checks. **Build** independently
+produces all four platform archives, verifies their structure/checksums and builds
+the accompanying source with test targets disabled. Published Linux binaries are built against glibc
 2.28 and bundle their C++ runtime statically; a local build on a newer distribution
 may require its newer glibc. There are no Linux ARM or Windows ARM builds.
+
+**Make Release** is a separate manual workflow. It validates a tag matching the
+project version (for example `v0.3.0`), runs Tests, then Build, and creates a GitHub
+Release only after both succeed for that same commit. It defaults to a draft;
+disable **draft** to publish, or enable **dry_run** to validate without creating a
+tag/release. See [GitHub workflows and releases](docs/github-actions.md).
 
 **macOS:** Apple Silicon is the primary development platform; Intel/universal builds are available.
 Requirements: full Xcode and Metal compiler, CMake 3.24+, Ninja and a C++17 compiler.

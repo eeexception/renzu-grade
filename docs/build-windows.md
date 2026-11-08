@@ -12,7 +12,8 @@ From the repository root:
 ```
 
 The script selects the Visual Studio 2022 x64 generator and disables Metal.
-`-Package` requires Release and runs the tests before creating an archive.
+`-RunTests` runs the tests; `-Package` creates a Release archive. They can be
+combined as above. CI uses `-WithoutTests -Package` for the separate Build workflow.
 For Debug tests, use a separate directory:
 
 ```powershell
@@ -62,11 +63,13 @@ in `%LOCALAPPDATA%\Renzu Grade\References\` are preserved.
 
 ## Verification and limits
 
-The Windows GitHub Actions job builds and runs all four CPU suites: color/image
-processing, reference matching/library storage, photographic controls and the
-OpenFX host contract. It verifies the ZIP checksum, loads/tests the extracted
-plugin, and rebuilds/tests its accompanying source. Logs and the distribution
-are uploaded as separate Actions artifacts. Downloading an Actions artifact adds
+The Windows job in **Tests** runs all four CPU suites: color/image processing,
+reference matching/library storage, photographic controls and the OpenFX host
+contract, including loading the compiled plugin. The separate **Build** workflow
+compiles only the plugin, verifies the ZIP checksum/layout and builds the
+accompanying source with test targets disabled. Logs belong to Tests; distributions
+belong to Build. [Make Release](github-actions.md) requires both workflows to
+succeed for its source commit. Downloading an Actions artifact adds
 an outer ZIP; extract it first, then the actual distribution ZIP inside it.
 
 Tests cover Unicode reference names/paths, replacing existing slots, and concurrent

@@ -10,8 +10,9 @@ or Metal toolchain is needed by the plugin build itself.
 ./scripts/build-linux.sh --debug --sanitize --test --build-dir build-linux-asan
 ```
 
-The script disables Metal. `--package` requires Release without sanitizers and
-runs tests before creating the archive. Equivalent direct CMake commands:
+The script disables Metal. `--test` runs tests; `--package` requires Release without
+sanitizers and creates the archive. They can be combined as above. CI uses
+`--without-tests --package` for the separate Build workflow. Equivalent direct CMake commands:
 
 ```bash
 cmake -S . -B build-linux -G 'Unix Makefiles' \
@@ -73,12 +74,13 @@ remain in `$XDG_DATA_HOME/renzu-grade/references/`, normally
 
 ## Verification and limits
 
-GitHub Actions runs the four CPU/OpenFX suites, checks exported functions,
-architecture, dependencies and glibc requirements, verifies the archive checksum,
-loads/tests the extracted plugin, and rebuilds/tests the accompanying source.
-A separate Ubuntu job runs ASan/UBSan tests. Logs and archives are separate Actions
-artifacts. Reference storage tests include Unicode paths, replacement, concurrent
-threads and separate processes.
+The **Tests** workflow runs the four CPU/OpenFX suites, including loading the
+compiled plugin, plus ASan/UBSan in a separate Ubuntu job. Reference storage tests
+cover Unicode paths, replacement, concurrent threads and separate processes.
+**Build** independently checks exported functions, architecture, dependencies,
+glibc requirements and archive checksums, then builds the accompanying source
+with test targets disabled. Logs are Tests artifacts; archives are Build artifacts.
+[Make Release](github-actions.md) requires both workflows to succeed for its source commit.
 
 Sanitized development builds share the test host's dynamic C++ runtime, avoiding
 an extra static-runtime exception pool at plugin unload. Distribution builds

@@ -1,0 +1,126 @@
+name: Make Release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag matching CMake VERSION (for example v0.3.0)'
+        required: true
+        type: string
+      draft:
+        description: 'Keep the release as a draft'
+        type: boolean
+        default: true
+      prerelease:
+        description: 'Mark as a prerelease'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Check everything without creating a tag or release'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    name: Validate version and source commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Validate release metadata
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release.py metadata --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          tagged_commit="$(git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" || true)"
+          if [[ -n "$tagged_commit" && "$tagged_commit" != "$GITHUB_SHA" ]]; then
+            echo 'The tag already points to a different commit.' >&2
+            exit 1
+          fi
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/existing-releases"
+          if grep -Fxq "$RELEASE_TAG" "$RUNNER_TEMP/existing-releases"; then
+            echo 'A release for this tag already exists; it will not be overwritten.' >&2
+            exit 1
+          fi
+
+  tests:
+    name: Tests
+    needs: validate
+    uses: ./.github/workflows/tests.yml
+    permissions:
+      contents: read
+
+  build:
+    name: Build
+    needs: tests
+    uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
+
+  publish:
+    name: Validate assets and create release
+    needs: [validate, tests, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Download distributions from this run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: renzu-grade-*
+          merge-multiple: true
+          path: release-assets
+      - name: Validate complete release asset set
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/release.py assets --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --directory release-assets
+      - name: Save release preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-preview
+          path: |
+            release-assets/release-manifest.json
+            release-assets/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+      - name: Create release and upload files
+        if: ${{ !inputs.dry_run }}
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_DRAFT: ${{ inputs.draft }}
+          RELEASE_PRERELEASE: ${{ inputs.prerelease }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=("$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Renzu Grade $RELEASE_TAG" --draft --generate-notes)
+          if [[ "$RELEASE_PRERELEASE" == true ]]; then args+=(--prerelease); fi
+          # Always upload into a draft first. An upload failure must not publish
+          # a release with a missing platform or a partially uploaded asset set.
+          gh release create "${args[@]}" release-assets/*
+          if [[ "$RELEASE_DRAFT" != true ]]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          fi
+      - name: Report result
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_DRY_RUN: ${{ inputs.dry_run }}
+          RELEASE_DRAFT: ${{ inputs.draft }}
+        run: |
+          {
+            echo "Tag: $RELEASE_TAG"
+            echo "Source commit: $GITHUB_SHA"
+            echo "Dry run: $RELEASE_DRY_RUN; draft: $RELEASE_DRAFT"
+            echo 'All tests and all four platform distributions passed.'
+            echo 'Checksums and commit provenance are in the release-preview artifact.'
+          } >> "$GITHUB_STEP_SUMMARY"

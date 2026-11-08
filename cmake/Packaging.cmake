@@ -42,7 +42,8 @@ install(DIRECTORY docs DESTINATION .)
 # Include the working source and all build scripts, including uncommitted local
 # changes, without depending on .git or shipping build trees/private files.
 install(DIRECTORY cmake include src shaders tests scripts docs .github
- DESTINATION Source/renzu-grade USE_SOURCE_PERMISSIONS)
+ DESTINATION Source/renzu-grade USE_SOURCE_PERMISSIONS
+ PATTERN "__pycache__" EXCLUDE PATTERN "*.pyc" EXCLUDE)
 install(DIRECTORY third_party/ofx DESTINATION Source/renzu-grade/third_party)
 install(FILES CMakeLists.txt LICENSE NOTICE README.md CONTRIBUTING.md CHANGELOG.md
  .gitignore .clang-format DESTINATION Source/renzu-grade)
