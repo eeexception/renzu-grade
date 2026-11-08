@@ -80,6 +80,10 @@ A separate Ubuntu job runs ASan/UBSan tests. Logs and archives are separate Acti
 artifacts. Reference storage tests include Unicode paths, replacement, concurrent
 threads and separate processes.
 
+Sanitized development builds share the test host's dynamic C++ runtime, avoiding
+an extra static-runtime exception pool at plugin unload. Distribution builds
+keep the private static runtime; the scripts do not package sanitizer builds.
+
 All controls, Auto, WB picker and Match use CPU processing. Playback/export speed
 depends on the CPU. Resolve still requires its own supported GPU and drivers.
 Before host acceptance, complete the [manual checklist](manual-test-plan.md) on

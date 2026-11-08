@@ -72,7 +72,12 @@ if(APPLE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
  # Avoid a dependency on the build machine's newer libstdc++, and keep its
  # private C++ runtime symbols out of Resolve's global symbol namespace.
- target_link_options(RenzuGrade PRIVATE -static-libstdc++ -static-libgcc
+ if(NOT RENZU_SANITIZE)
+  target_link_options(RenzuGrade PRIVATE -static-libstdc++ -static-libgcc)
+ endif()
+ # Sanitized tests share the host C++ runtime. A second static libstdc++ creates
+ # an emergency exception pool that LeakSanitizer loses track of at dlclose.
+ target_link_options(RenzuGrade PRIVATE
   "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cmake/renzu.exports")
  set_property(TARGET RenzuGrade APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/renzu.exports")
 endif()
