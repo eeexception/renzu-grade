@@ -1,0 +1,7 @@
+/build*/
+/dist/
+/third_party/openfx/
+.DS_Store
+*.xcresult/
+compile_commands.json
+.cache/

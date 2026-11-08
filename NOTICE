@@ -1,0 +1,16 @@
+Renzu Grade 0.3.0
+Copyright 2026 Renzu Grade contributors
+Licensed under the GNU General Public License, version 3 only (GPL-3.0-only).
+See LICENSE for the complete terms.
+
+This distribution includes the official OpenFX SDK header files, under the
+BSD 3-Clause license. Copyright OpenFX and contributors to the OpenFX project.
+See third_party/ofx/LICENSE.md (OPENFX-LICENSE.md in binary distributions).
+Pinned upstream revision: b2d2eea3a64e511bfabb80e56f902d96adf4a05e
+Upstream: https://github.com/AcademySoftwareFoundation/openfx
+
+DaVinci Resolve and DaVinci Wide Gamut are trademarks of Blackmagic Design.
+Lightroom and Adobe are trademarks of Adobe. Apple, macOS, Metal, and Xcode
+are trademarks of Apple. Renzu Grade is an independent project, not sponsored,
+endorsed, or certified by these companies. No Adobe SDK or Blackmagic sample
+source code is included in this distribution.
