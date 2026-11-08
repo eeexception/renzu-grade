@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include "Platform.h"
 #include "renzu/Match.h"
 #include <chrono>
 #include <fstream>
 #include <future>
 #include <iostream>
 #include <stdexcept>
+#ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 using namespace renzu;
 int checks = 0;
 void require(bool value, const char *message) {
@@ -47,8 +50,19 @@ double chromaError(const std::vector<V3> &a, const std::vector<V3> &b) {
     }
     return e / a.size();
 }
-int main() {
+#ifdef _WIN32
+int wmain(int argc, wchar_t **argv) {
+#else
+int main(int argc, char **argv) {
+#endif
     try {
+        if (argc == 3 && std::filesystem::path(argv[1]) == "--save-reference") {
+            Settings s;
+            s.space = 2;
+            ReferenceStore(std::filesystem::path(argv[2]))
+                .save(makeReference(ramp(), s, "Child process", 0));
+            return 0;
+        }
         auto input = ramp();
         Settings linear;
         linear.space = 2;
@@ -159,7 +173,14 @@ int main() {
         require(!matchReference(target, invalid, reference, MatchMode::WBAndExposure).applied(),
                 "invalid manual values rejected");
         Scratch scratch;
-        ReferenceStore store(scratch.path / "library");
+        // Exercise wide Windows paths, spaces and UTF-8 Unix paths as well as
+        // non-ASCII reference names. Never touch the real user library.
+        ReferenceStore store(scratch.path / std::filesystem::u8path("Референсы A"));
+        {
+            test::Environment isolated("RENZU_REFERENCE_DIRECTORY", store.directory());
+            require(ReferenceStore::defaultDirectory() == store.directory(),
+                    "reference directory override supports Unicode and spaces");
+        }
         require(store.list().empty(), "new library empty");
         require(!std::filesystem::exists(store.directory()), "listing does not create library");
         auto saved = store.save(reference);
@@ -204,6 +225,13 @@ int main() {
         // Separate processes do not share the C++ mutex. The filesystem lock
         // must still serialize allocation and preserve both newly saved slots.
         auto countBefore = store.list().size();
+#ifdef _WIN32
+        auto executable = std::filesystem::absolute(argv[0]);
+        test::ReferenceWriter first(executable, store.directory()),
+            secondWriter(executable, store.directory());
+        require(first.wait(), "first process reference writer completed");
+        require(secondWriter.wait(), "second process reference writer completed");
+#else
         pid_t children[2];
         for (auto &child : children) {
             child = fork();
@@ -223,6 +251,7 @@ int main() {
                         WEXITSTATUS(status) == 0,
                     "process reference writer completed");
         }
+#endif
         require(store.list().size() == countBefore + 2,
                 "cross-process save allocation preserves both entries");
         while (store.list().size() < referenceSlots)

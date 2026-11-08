@@ -52,7 +52,10 @@ produce a similar image. Unchecked fields retain their values. There are 16 stab
 named slots; Latest creates a new entry, and saving to a numbered slot explicitly
 replaces it. Loaded snapshots are embedded in project parameters, so grades and
 re-matching can survive moving a project without the shared library. The library
-lives at `~/Library/Application Support/Renzu Grade/References/` on macOS.
+lives at `~/Library/Application Support/Renzu Grade/References/` on macOS,
+`%LOCALAPPDATA%\Renzu Grade\References\` on Windows, and
+`$XDG_DATA_HOME/renzu-grade/references/` on Linux (default:
+`~/.local/share/renzu-grade/references/`).
 
 If the host declines immediate frame access, Status asks you to let the viewer
 update and press the **same button again**. WB Auto similarly asks you to select
@@ -77,7 +80,44 @@ nodes and the viewer display transform are outside a saved reference.
 
 ## Build, test and install
 
-Primary platform: Apple Silicon, macOS 13+. Intel/universal builds are available.
+| Platform | Architecture | Rendering | Build instructions |
+| --- | --- | --- | --- |
+| macOS 13+ | Apple Silicon, Intel, universal | Metal + CPU | [macOS](docs/build-macos.md) |
+| Windows | x64 | CPU only | [Windows](docs/build-windows.md) |
+| Linux with glibc 2.28+ | x86_64 | CPU only | [Linux](docs/build-linux.md) |
+
+Windows/Linux builds include the same photographic controls, Auto, WB picker and
+Match. They do not include CUDA/OpenCL acceleration. CPU processing can be slower,
+and Resolve's own GPU/system requirements still apply. Host acceptance on each
+system remains separate from standalone testing.
+
+**Windows/Linux downloads:** open the repository's **Actions** tab, select a
+successful **Windows and Linux CPU build and tests** run, and download the
+appropriate distribution under **Artifacts**. Extract the artifact, verify the
+included SHA256 checksum if desired, then extract the inner `.zip` (Windows) or
+`.tar.gz` (Linux). Follow its `INSTALL.txt`; copy the entire `.ofx.bundle` folder,
+not just the `.ofx` binary. Archives include corresponding source and build scripts.
+
+Quick source builds (CMake 3.24+ and the platform compiler):
+
+```powershell
+# Windows x64: Visual Studio 2022 Build Tools, Desktop development with C++.
+./scripts/build-windows.ps1 -RunTests -Package
+```
+
+```bash
+# Linux x86_64: C++17 compiler and make.
+./scripts/build-linux.sh --test --package
+```
+
+Packages appear in `build-windows/dist/` or `build-linux/dist/` with SHA256 files.
+GitHub Actions runs all four CPU/OpenFX suites on both systems for pushes and pull
+requests, tests the packaged binaries, and rebuilds/tests the accompanying source.
+Linux also has an ASan/UBSan job. Published Linux binaries are built against glibc
+2.28 and bundle their C++ runtime statically; a local build on a newer distribution
+may require its newer glibc. There are no Linux ARM or Windows ARM builds.
+
+**macOS:** Apple Silicon is the primary development platform; Intel/universal builds are available.
 Requirements: full Xcode and Metal compiler, CMake 3.24+, Ninja and a C++17 compiler.
 Pinned official OpenFX headers are included; no Python or Conan is used.
 
@@ -117,7 +157,8 @@ signed, not Developer ID signed/notarized. See [build instructions](docs/build-m
 
 Target host: Resolve 21.x. A successful standalone build is not host certification.
 Real Resolve UI presentation, overlay routing, undo/redo, project persistence,
-playback/export, and Intel GPU behavior require the [manual checklist](docs/manual-test-plan.md).
+playback/export, Windows/Linux host loading, and Intel GPU behavior require the
+[manual checklist](docs/manual-test-plan.md).
 
 - Real Metal buffer/texture rendering and a multithreaded CPU backend share pixel math.
 - RGB/RGBA buffers support byte, short, half and float; textures use negotiated RGBA formats.

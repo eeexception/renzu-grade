@@ -11,10 +11,10 @@
 #include <ofxProperty.h>
 #ifdef RENZU_METAL
 #include "renzu/Metal.h"
+#include <dlfcn.h>
 #endif
 #include <atomic>
 #include <cstring>
-#include <dlfcn.h>
 #include <limits>
 #include <map>
 #include <memory>
@@ -1276,9 +1276,14 @@ void setHost(OfxHost *h) {
 }
 OfxPlugin plugin = {kOfxImageEffectPluginApi, 1, "org.renzu.grade", 0, 3, setHost, entry};
 } // namespace
-extern "C" __attribute__((visibility("default"))) int OfxGetNumberOfPlugins() {
+#ifdef _WIN32
+#define RENZU_EXPORT __declspec(dllexport)
+#else
+#define RENZU_EXPORT __attribute__((visibility("default")))
+#endif
+extern "C" RENZU_EXPORT int OfxGetNumberOfPlugins() {
     return 1;
 }
-extern "C" __attribute__((visibility("default"))) OfxPlugin *OfxGetPlugin(int n) {
+extern "C" RENZU_EXPORT OfxPlugin *OfxGetPlugin(int n) {
     return n == 0 ? &plugin : nullptr;
 }

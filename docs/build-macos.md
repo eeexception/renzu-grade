@@ -149,5 +149,6 @@ then re-verify and package. No credentials or signing service is part of this re
 - **Button cannot access a frame:** let the viewer update, then press that same
   action again. For WB, select Auto again. No separate capture controls are needed.
 
-Linux/non-Apple C++ builds may run the core and C-suite tests using explicit
-`-DRENZU_ENABLE_METAL=OFF`; macOS deployment scripts remain macOS-only.
+For CPU-only Windows/Linux distributions, see [Windows](build-windows.md) and
+[Linux](build-linux.md). Metal defaults to OFF on those platforms. The macOS shell
+build/install/package scripts remain macOS-only.

@@ -4,15 +4,22 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <fstream>
 #include <iomanip>
+#include <memory>
 #include <mutex>
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
+#ifdef _WIN32
+#include <shlobj.h>
+#include <windows.h>
+#else
+#include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
+#endif
 namespace renzu {
 namespace fs = std::filesystem;
 static std::mutex storeMutex;
@@ -20,6 +27,27 @@ static_assert(sizeof(float) == 4, "Reference format requires IEEE 32-bit float s
 class LibraryWriteLock {
   public:
     explicit LibraryWriteLock(const fs::path &directory) {
+#ifdef _WIN32
+        handle_ = CreateFileW((directory / ".lock").c_str(), GENERIC_READ | GENERIC_WRITE,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        if (handle_ == INVALID_HANDLE_VALUE)
+            throw std::system_error(int(GetLastError()), std::system_category(),
+                                    "Cannot open reference library save lock");
+        BY_HANDLE_FILE_INFORMATION info{};
+        if (!GetFileInformationByHandle(handle_, &info) ||
+            (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            CloseHandle(handle_);
+            throw std::runtime_error("Invalid reference library save lock");
+        }
+        OVERLAPPED position{};
+        if (!LockFileEx(handle_, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &position)) {
+            auto error = GetLastError();
+            CloseHandle(handle_);
+            throw std::system_error(int(error), std::system_category(),
+                                    "Cannot acquire reference library save lock");
+        }
+#else
         handle_ =
             ::open((directory / ".lock").c_str(), O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
         if (handle_ < 0)
@@ -28,16 +56,27 @@ class LibraryWriteLock {
             ::close(handle_);
             throw std::runtime_error("Cannot acquire reference library save lock");
         }
+#endif
     }
     ~LibraryWriteLock() {
+#ifdef _WIN32
+        OVERLAPPED position{};
+        UnlockFileEx(handle_, 0, 1, 0, &position);
+        CloseHandle(handle_);
+#else
         ::flock(handle_, LOCK_UN);
         ::close(handle_);
+#endif
     }
     LibraryWriteLock(const LibraryWriteLock &) = delete;
     LibraryWriteLock &operator=(const LibraryWriteLock &) = delete;
 
   private:
+#ifdef _WIN32
+    HANDLE handle_ = INVALID_HANDLE_VALUE;
+#else
     int handle_ = -1;
+#endif
 };
 static constexpr std::size_t maxSerialized = 256 * 1024;
 static std::uint64_t checksum(const std::string &s) {
@@ -129,6 +168,30 @@ ReferenceFrame deserializeReference(const std::string &text) {
     return r;
 }
 static std::string read(const fs::path &p) {
+#ifdef _WIN32
+    // Allow atomic replacement while a reader retains the previous snapshot.
+    // The CRT's ifstream does not open files with FILE_SHARE_DELETE.
+    HANDLE handle =
+        CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        throw std::system_error(int(GetLastError()), std::system_category(),
+                                "Reference file unavailable");
+    auto closeHandle = [](void *h) { CloseHandle(h); };
+    std::unique_ptr<void, decltype(closeHandle)> file(handle, closeHandle);
+    BY_HANDLE_FILE_INFORMATION info{};
+    if (!GetFileInformationByHandle(handle, &info) ||
+        (info.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)))
+        throw std::runtime_error("Invalid reference file or symbolic link");
+    if (info.nFileSizeHigh != 0 || info.nFileSizeLow > maxSerialized)
+        throw std::runtime_error("Reference file exceeds size limit");
+    std::string value(info.nFileSizeLow, '\0');
+    DWORD bytesRead = 0;
+    if (!ReadFile(handle, value.data(), info.nFileSizeLow, &bytesRead, nullptr) ||
+        bytesRead != info.nFileSizeLow)
+        throw std::runtime_error("Cannot read complete reference file");
+    return value;
+#else
     if (fs::is_symlink(p))
         throw std::runtime_error("Refusing a reference file symbolic link");
     if (!fs::is_regular_file(p))
@@ -145,6 +208,7 @@ static std::string read(const fs::path &p) {
     if (in.gcount() != std::streamsize(size) || in.peek() != std::char_traits<char>::eof())
         throw std::runtime_error("Reference file changed while reading");
     return value;
+#endif
 }
 static void atomicWrite(const fs::path &path, const std::string &value) {
     auto temporary = path;
@@ -155,7 +219,16 @@ static void atomicWrite(const fs::path &path, const std::string &value) {
         out.close();
         if (!out)
             throw std::runtime_error("Cannot write reference file");
+#ifdef _WIN32
+        // Unlike POSIX rename, Windows filesystem::rename cannot replace an
+        // existing slot/latest file. Never delete the old snapshot first.
+        if (!MoveFileExW(temporary.c_str(), path.c_str(),
+                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            throw std::system_error(int(GetLastError()), std::system_category(),
+                                    "Cannot replace reference file");
+#else
         fs::rename(temporary, path);
+#endif
     } catch (...) {
         std::error_code ignored;
         fs::remove(temporary, ignored);
@@ -164,11 +237,31 @@ static void atomicWrite(const fs::path &path, const std::string &value) {
 }
 fs::path ReferenceStore::defaultDirectory() {
     // Test harnesses supply an isolated directory; no reference storage is opened
-    // during ordinary render. HOME is read, never changed.
+    // during ordinary render. Environment variables are read, never changed.
+#ifdef _WIN32
+    // Wide Windows APIs also support non-ASCII user names and library locations.
+    if (const wchar_t *overridePath = _wgetenv(L"RENZU_REFERENCE_DIRECTORY")) {
+        if (*overridePath)
+            return fs::path(overridePath);
+    }
+    PWSTR localAppData = nullptr;
+    auto status =
+        SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DONT_VERIFY, nullptr, &localAppData);
+    std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)> owned(localAppData, &CoTaskMemFree);
+    if (FAILED(status) || !localAppData || !*localAppData)
+        throw std::runtime_error("Cannot locate the user's reference library");
+    return fs::path(localAppData) / L"Renzu Grade" / L"References";
+#else
     if (const char *overridePath = std::getenv("RENZU_REFERENCE_DIRECTORY")) {
         if (*overridePath)
             return fs::path(overridePath);
     }
+#ifndef __APPLE__
+    if (const char *data = std::getenv("XDG_DATA_HOME")) {
+        if (*data && fs::path(data).is_absolute())
+            return fs::path(data) / "renzu-grade/references";
+    }
+#endif
     const char *home = std::getenv("HOME");
     if (!home || !*home)
         throw std::runtime_error("Cannot locate the user's reference library");
@@ -176,6 +269,7 @@ fs::path ReferenceStore::defaultDirectory() {
     return fs::path(home) / "Library/Application Support/Renzu Grade/References";
 #else
     return fs::path(home) / ".local/share/renzu-grade/references";
+#endif
 #endif
 }
 static fs::path slotPath(const fs::path &root, int slot) {

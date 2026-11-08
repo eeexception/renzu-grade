@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add Windows x64 (MSVC, static CRT) and Linux x86_64 CPU-only OFX bundles,
+  distribution archives, build scripts and installation instructions.
+- Add Windows/Linux GitHub Actions builds and tests, archive/load verification,
+  corresponding-source rebuilds and Linux ASan/UBSan coverage. Build Linux
+  distributions against glibc 2.28 with a private static C++ runtime.
+- Port reference library locks, atomic replacement, Unicode paths and contract
+  test loading to Windows; respect XDG_DATA_HOME on Linux.
+- Replace compiler-specific CPU half-float conversion with portable IEEE binary16
+  conversion and exhaustive encoding/rounding tests.
 - License project code under GNU GPL version 3 only; retain the BSD-3-Clause
   license and notices for the official OpenFX headers.
 - Include corresponding source and build scripts in distribution archives.

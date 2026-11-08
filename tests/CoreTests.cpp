@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "renzu/Controls.h"
 #include "renzu/Engine.h"
+#include "renzu/Half.h"
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -29,6 +30,43 @@ std::vector<V3> ramp(double min, double max) {
 }
 int main() {
     try {
+        // Exhaust every binary16 encoding. Finite values and signed zero must
+        // round-trip exactly; infinity/NaN must retain their classification.
+        for (unsigned bits = 0; bits < 65536; ++bits) {
+            auto h = std::uint16_t(bits);
+            float value = halfToFloat(h);
+            if ((h & 0x7fffu) > 0x7c00u)
+                require(std::isnan(value) && (floatToHalf(value) & 0x7fffu) > 0x7c00u,
+                        "half NaN classification");
+            else
+                require(floatToHalf(value) == h, "exact half encoding roundtrip");
+            if ((h & 0x7c00u) != 0x7c00u) {
+                int exponent = (h >> 10) & 31, fraction = h & 1023;
+                double expected = exponent == 0
+                                      ? std::ldexp(double(fraction), -24)
+                                      : std::ldexp(double(1024 + fraction), exponent - 25);
+                near(value, (h & 0x8000u) ? -expected : expected, 0,
+                     "half numeric value matches IEEE definition");
+            }
+        }
+        near(halfToFloat(0x0001), std::ldexp(1., -24), 0, "minimum half subnormal");
+        near(halfToFloat(0x0400), std::ldexp(1., -14), 0, "minimum half normal");
+        near(halfToFloat(0x7bff), 65504, 0, "maximum finite half");
+        require(floatToHalf(std::ldexp(1.f, -25)) == 0, "half underflow tie to even zero");
+        require(floatToHalf(std::nextafter(std::ldexp(1.f, -25), 1.f)) == 1,
+                "half rounds above underflow midpoint");
+        for (unsigned bits = 0; bits < 0x7bff; ++bits) {
+            float low = halfToFloat(std::uint16_t(bits));
+            float high = halfToFloat(std::uint16_t(bits + 1));
+            float midpoint = (low + high) * .5f;
+            auto even = std::uint16_t(bits + (bits & 1u));
+            require(floatToHalf(midpoint) == even, "half midpoint rounds to even");
+            require(floatToHalf(-midpoint) == (even | 0x8000u),
+                    "negative half midpoint rounds to even");
+            require(floatToHalf(std::nextafter(midpoint, low)) == bits &&
+                        floatToHalf(std::nextafter(midpoint, high)) == bits + 1,
+                    "half rounding on both sides of midpoint");
+        }
         for (int space = 0; space < 3; ++space) {
             Settings s;
             s.space = space;

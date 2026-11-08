@@ -27,8 +27,13 @@ saving to a numbered slot replaces it. Latest is resolved when loaded and pinned
 in that effect. Other saves do not silently change it; Load Reference refreshes
 its snapshot. The Selected label shows the loaded name and is read-only.
 
-On macOS, references live at:
-`~/Library/Application Support/Renzu Grade/References/`.
+References live at:
+
+- macOS: `~/Library/Application Support/Renzu Grade/References/`.
+- Windows: `%LOCALAPPDATA%\Renzu Grade\References\` (resolved with the Windows known-folder API).
+- Linux: `$XDG_DATA_HOME/renzu-grade/references/`, falling back to
+  `~/.local/share/renzu-grade/references/` when XDG_DATA_HOME is absent or relative.
+
 Each file contains a versioned identifier, name, time, encoding and float RGB data,
 with a checksum. Thread/process locks and atomic writes protect allocation.
 Corrupt entries are isolated and explicit loads report errors. A loaded snapshot
