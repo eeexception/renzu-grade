@@ -63,12 +63,12 @@ in `%LOCALAPPDATA%\Renzu Grade\References\` are preserved.
 
 ## Verification and limits
 
-The Windows job in **Tests** runs all four CPU suites: color/image processing,
+The Windows job in **Run Windows Tests** / **Run All Tests** runs all four CPU suites: color/image processing,
 reference matching/library storage, photographic controls and the OpenFX host
-contract, including loading the compiled plugin. The separate **Build** workflow
+contract, including loading the compiled plugin. The separate **Run Windows Build** / **Run All Builds** workflow
 compiles only the plugin, verifies the ZIP checksum/layout and builds the
 accompanying source with test targets disabled. Logs belong to Tests; distributions
-belong to Build. [Make Release](github-actions.md) requires both workflows to
+belong to Build. [Run Windows Release / Run All Releases](github-actions.md) requires both workflows to
 succeed for its source commit. Downloading an Actions artifact adds
 an outer ZIP; extract it first, then the actual distribution ZIP inside it.
 

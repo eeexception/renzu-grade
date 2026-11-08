@@ -1,0 +1,10 @@
+name: Run Windows Tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+    with:
+      platform: windows

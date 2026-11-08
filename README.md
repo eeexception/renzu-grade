@@ -9,7 +9,7 @@ panel. It works locally, without another app, DCTL or runtime internet access.
 
 Download the archive for your system from
 [GitHub Releases](https://github.com/eeexception/renzu-grade/releases). Development
-builds are also available under **Actions -> Build -> a successful run -> Artifacts**.
+builds are also available under **Actions -> Run All Builds** (or your platform’s Build workflow) **-> a successful run -> Artifacts**.
 Actions adds an outer ZIP: extract that first, then extract the distribution inside
 it. Each distribution contains `RenzuGrade.ofx.bundle`, `INSTALL.txt`, licenses,
 documentation and corresponding source.
@@ -313,7 +313,7 @@ Windows, configure directly with CMake, as shown in the platform build guide.
 The project version is set in `project(RenzuGrade VERSION ...)` in
 [CMakeLists.txt](CMakeLists.txt). Update the OpenFX major/minor version in
 [src/ofx/Plugin.cpp](src/ofx/Plugin.cpp) when those components change, and update
-release documentation/notices. Make Release validates the version; it does not bump it.
+release documentation/notices. Release workflows validate the version; they do not bump it.
 
 ### Script reference
 
@@ -333,6 +333,7 @@ All paths below are relative to the repository or packaged source root.
 | [build-linux.sh](scripts/build-linux.sh) | Linux x86_64 | `./scripts/build-linux.sh [options]` configures/compiles, optionally runs tests and packages with CPack |
 | [verify-linux.sh](scripts/verify-linux.sh) | Linux | `./scripts/verify-linux.sh [bundle] [max-glibc]` checks ELF architecture, exports, dependencies and glibc requirement; defaults to the `build-linux` bundle; CI passes `2.28` as the maximum |
 | [release.py](scripts/release.py) | Python 3.9+ | Validates release metadata or the complete archive/checksum set and writes release manifests; commands below |
+| [publish_release.py](scripts/publish_release.py) | Python 3.9+ / GitHub CLI | Checks or creates/extends a version release for the selected platforms, preserves existing files and enforces the source commit; `--check` is read-only, `--dry-run` previews uploads |
 | [common.sh](scripts/common.sh) | Bash helper | Sourced by shell scripts; supplies project-root lookup, prerequisite/error helpers and administrator-write handling; not a standalone command |
 
 Build-script options:
@@ -373,30 +374,49 @@ python3 scripts/release.py assets --tag v0.3.0 --commit "$(git rev-parse HEAD)" 
 ```
 
 `release.py` accepts `metadata` or `assets`, required `--tag` and `--commit`,
+`--platform all` / `macos` / `windows` / `linux` (default `all`),
 optional `--source <source-root>` (defaults to its own source root), and
 `--directory <asset-directory>` for assets mode. Metadata is printed as JSON.
-Assets mode also writes `SHA256SUMS` and `release-manifest.json`. The tag must
+Assets mode writes `SHA256SUMS` and `release-manifest.json` for All, or
+platform-specific names such as `SHA256SUMS-macos` and `release-manifest-macos.json`. The tag must
 match the CMake version and the commit must be a full SHA. This script does not
 create tags or publish releases.
 
 ### GitHub Actions and releases
 
-| Workflow | Trigger and responsibility |
-| --- | --- |
-| [Tests](.github/workflows/tests.yml) | Push, PR or manual: CPU/OpenFX, macOS arm64 Metal, Linux sanitizers and release-tool checks; uploads diagnostic logs |
-| [Build](.github/workflows/build.yml) | Push, PR or manual: builds three platform archives with test targets disabled, verifies packages and builds their corresponding source; uploads distributions |
-| [Make Release](.github/workflows/make-release.yml) | Manual: validates the version/commit, calls Tests, then Build, checks all release assets and creates a GitHub Release |
+The Actions sidebar provides 12 separate manual launchers:
 
-After the workflow is merged into the default branch, open **Actions -> Make
-Release -> Run workflow**. Select the source branch/tag and enter a tag matching
-CMake VERSION, such as `v0.3.0`. **draft** defaults to true; disable it to publish
-automatically. **prerelease** marks a prerelease. **dry_run** validates/tests/builds
-without creating a tag or release. Existing releases are not overwritten.
+| Platform | Tests | Build | Release |
+| --- | --- | --- | --- |
+| macOS arm64 | [Run macOS Tests](.github/workflows/run-macos-tests.yml) | [Run macOS Build](.github/workflows/run-macos-build.yml) | [Run macOS Release](.github/workflows/run-macos-release.yml) |
+| Windows x64 | [Run Windows Tests](.github/workflows/run-windows-tests.yml) | [Run Windows Build](.github/workflows/run-windows-build.yml) | [Run Windows Release](.github/workflows/run-windows-release.yml) |
+| Linux x86_64 | [Run Linux Tests](.github/workflows/run-linux-tests.yml) | [Run Linux Build](.github/workflows/run-linux-build.yml) | [Run Linux Release](.github/workflows/run-linux-release.yml) |
+| All | [Run All Tests](.github/workflows/tests.yml) | [Run All Builds](.github/workflows/build.yml) | [Run All Releases](.github/workflows/make-release.yml) |
 
-Each release contains the macOS arm64, Windows x64 CPU and Linux x86_64 CPU
-archives, individual SHA256 sidecars, a combined `SHA256SUMS` and a source-commit
-manifest. Every required test/build must pass for the same commit. See
-[workflow and release details](docs/github-actions.md).
+The All Tests/Builds workflows also run automatically on pushes and pull requests.
+Platform launchers run only their platform's plugin jobs; Linux Tests includes
+ASan/UBSan. Shared release-tool checks run with every test selection. Build creates
+archives with test targets disabled, verifies packages and builds their source.
+
+After merging the workflows into the default branch, choose the desired launcher
+in Actions and click **Run workflow**. Release launchers accept a tag matching
+CMake VERSION, such as `v0.3.0`, and run the selected tests and builds first.
+**draft** defaults to true; disable it to publish after uploading. **prerelease**
+marks a newly created release. **dry_run** previews without changing a tag/release.
+
+Platform releases share one version tag. For example, run macOS Release first,
+then Windows Release for the same source commit to add Windows files. Existing
+assets are verified and preserved; All Releases can complete that release using
+its already-uploaded files. Release notes, prerelease marking and an existing
+published state are preserved when extending a release. Different source commits
+for the same tag are rejected. See [workflow and release details](docs/github-actions.md).
+
+`scripts/publish_release.py` requires `--repo OWNER/NAME`, `--tag`, `--commit`, and
+optionally `--platform`, `--source`, `--directory`. Use `--check` for metadata and
+existing-tag checks; uploads require `--directory`. It creates a draft by default;
+`--publish` publishes a new/existing draft after successful uploads, `--prerelease`
+applies to a new release, and `--dry-run` prepares/validates without remote writes.
+GitHub authentication is required for release lookups/downloads/publication.
 
 ## Compatibility
 

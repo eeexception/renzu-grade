@@ -1,4 +1,4 @@
-name: Make Release
+name: Run All Releases
 on:
   workflow_dispatch:
     inputs:
@@ -7,15 +7,37 @@ on:
         required: true
         type: string
       draft:
-        description: 'Keep the release as a draft'
+        description: 'Keep a new or existing draft unpublished'
         type: boolean
         default: true
       prerelease:
-        description: 'Mark as a prerelease'
+        description: 'Mark a newly created release as a prerelease'
         type: boolean
         default: false
       dry_run:
-        description: 'Check everything without creating a tag or release'
+        description: 'Preview without creating/updating a tag or release'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      platform:
+        description: 'Internal platform selector'
+        type: string
+        default: all
+      tag:
+        description: 'Tag matching CMake VERSION (for example v0.3.0)'
+        required: true
+        type: string
+      draft:
+        description: 'Keep a new or existing draft unpublished'
+        type: boolean
+        default: true
+      prerelease:
+        description: 'Mark a newly created release as a prerelease'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Preview without creating/updating a tag or release'
         type: boolean
         default: false
 permissions:
@@ -25,48 +47,46 @@ concurrency:
   cancel-in-progress: false
 jobs:
   validate:
-    name: Validate version and source commit
+    name: Validate platform, version and source commit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    outputs:
+      platform: ${{ steps.scope.outputs.platform }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Validate release metadata
+      - name: Validate release metadata and existing tag
+        id: scope
         env:
           RELEASE_TAG: ${{ inputs.tag }}
+          TARGET_PLATFORM: ${{ inputs.platform || 'all' }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 scripts/release.py metadata --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          tagged_commit="$(git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}" || true)"
-          if [[ -n "$tagged_commit" && "$tagged_commit" != "$GITHUB_SHA" ]]; then
-            echo 'The tag already points to a different commit.' >&2
-            exit 1
-          fi
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name' > "$RUNNER_TEMP/existing-releases"
-          if grep -Fxq "$RELEASE_TAG" "$RUNNER_TEMP/existing-releases"; then
-            echo 'A release for this tag already exists; it will not be overwritten.' >&2
-            exit 1
-          fi
+          python3 -B scripts/publish_release.py --check --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --platform "$TARGET_PLATFORM"
+          echo "platform=$TARGET_PLATFORM" >> "$GITHUB_OUTPUT"
 
   tests:
     name: Tests
     needs: validate
     uses: ./.github/workflows/tests.yml
+    with:
+      platform: ${{ needs.validate.outputs.platform }}
     permissions:
       contents: read
 
   build:
     name: Build
-    needs: tests
+    needs: [validate, tests]
     uses: ./.github/workflows/build.yml
+    with:
+      platform: ${{ needs.validate.outputs.platform }}
     permissions:
       contents: read
 
   publish:
-    name: Validate assets and create release
+    name: Validate assets and create or extend release
     needs: [validate, tests, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -76,51 +96,41 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-      - name: Download distributions from this run
+          fetch-depth: 0
+      - name: Download selected distributions from this run
         uses: actions/download-artifact@v4
         with:
           pattern: renzu-grade-*
           merge-multiple: true
           path: release-assets
-      - name: Validate complete release asset set
+      - name: Validate, preserve existing files and upload selected assets
         env:
           RELEASE_TAG: ${{ inputs.tag }}
-        run: python3 scripts/release.py assets --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --directory release-assets
+          TARGET_PLATFORM: ${{ needs.validate.outputs.platform }}
+          RELEASE_DRAFT: ${{ inputs.draft }}
+          RELEASE_PRERELEASE: ${{ inputs.prerelease }}
+          RELEASE_DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(--repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --commit "$GITHUB_SHA" --platform "$TARGET_PLATFORM" --directory release-assets)
+          if [[ "$RELEASE_DRAFT" != true ]]; then args+=(--publish); fi
+          if [[ "$RELEASE_PRERELEASE" == true ]]; then args+=(--prerelease); fi
+          if [[ "$RELEASE_DRY_RUN" == true ]]; then args+=(--dry-run); fi
+          python3 -B scripts/publish_release.py "${args[@]}" | tee "$RUNNER_TEMP/release-result.json"
       - name: Save release preview
         uses: actions/upload-artifact@v4
         with:
           name: release-preview
           path: |
-            release-assets/release-manifest.json
-            release-assets/SHA256SUMS
+            release-assets/release-manifest*.json
+            release-assets/SHA256SUMS*
           if-no-files-found: error
           retention-days: 14
-      - name: Create release and upload files
-        if: ${{ !inputs.dry_run }}
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_DRAFT: ${{ inputs.draft }}
-          RELEASE_PRERELEASE: ${{ inputs.prerelease }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          args=("$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Renzu Grade $RELEASE_TAG" --draft --generate-notes)
-          if [[ "$RELEASE_PRERELEASE" == true ]]; then args+=(--prerelease); fi
-          # Always upload into a draft first. An upload failure must not publish
-          # a release with a missing platform or a partially uploaded asset set.
-          gh release create "${args[@]}" release-assets/*
-          if [[ "$RELEASE_DRAFT" != true ]]; then
-            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-          fi
       - name: Report result
-        env:
-          RELEASE_TAG: ${{ inputs.tag }}
-          RELEASE_DRY_RUN: ${{ inputs.dry_run }}
-          RELEASE_DRAFT: ${{ inputs.draft }}
         run: |
           {
-            echo "Tag: $RELEASE_TAG"
-            echo "Source commit: $GITHUB_SHA"
-            echo "Dry run: $RELEASE_DRY_RUN; draft: $RELEASE_DRAFT"
-            echo 'All tests and all three platform distributions passed.'
-            echo 'Checksums and commit provenance are in the release-preview artifact.'
+            echo 'Selected-platform tests, builds and release validation passed.'
+            echo '```json'
+            cat "$RUNNER_TEMP/release-result.json"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

@@ -74,13 +74,13 @@ remain in `$XDG_DATA_HOME/renzu-grade/references/`, normally
 
 ## Verification and limits
 
-The **Tests** workflow runs the four CPU/OpenFX suites, including loading the
+The **Run Linux Tests** / **Run All Tests** workflow runs the four CPU/OpenFX suites, including loading the
 compiled plugin, plus ASan/UBSan in a separate Ubuntu job. Reference storage tests
 cover Unicode paths, replacement, concurrent threads and separate processes.
-**Build** independently checks exported functions, architecture, dependencies,
+**Run Linux Build** / **Run All Builds** independently checks exported functions, architecture, dependencies,
 glibc requirements and archive checksums, then builds the accompanying source
 with test targets disabled. Logs are Tests artifacts; archives are Build artifacts.
-[Make Release](github-actions.md) requires both workflows to succeed for its source commit.
+[Run Linux Release / Run All Releases](github-actions.md) requires both workflows to succeed for its source commit.
 
 Sanitized development builds share the test host's dynamic C++ runtime, avoiding
 an extra static-runtime exception pool at plugin unload. Distribution builds

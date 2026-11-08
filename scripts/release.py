@@ -16,7 +16,19 @@ def project_version(text):
     return match.group(1)
 
 
-def metadata(source, tag, commit):
+PLATFORMS = ("macos", "windows", "linux")
+
+
+def selected_platforms(platform):
+    if platform == "all":
+        return PLATFORMS
+    if platform in PLATFORMS:
+        return (platform,)
+    raise ValueError(f"Unknown release platform: {platform}")
+
+
+def metadata(source, tag, commit, platform="all"):
+    selected_platforms(platform)
     version = project_version((Path(source) / "CMakeLists.txt").read_text(encoding="utf-8"))
     if not re.fullmatch(r"v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)", tag):
         raise ValueError("Tag must have the form vMAJOR.MINOR.PATCH")
@@ -24,16 +36,32 @@ def metadata(source, tag, commit):
         raise ValueError(f"Tag {tag} does not match project version v{version}")
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Release commit must be a full GitHub commit SHA")
-    return {"version": version, "tag": tag, "commit": commit}
+    return {"version": version, "tag": tag, "commit": commit, "platform": platform}
 
 
-def distributions(version):
+def distributions(version, platform="all"):
     prefix = "renzu-grade-" + version
-    return {
-        prefix + "-macos-arm64.zip": "MacOS",
-        prefix + "-windows-x86_64-cpu-only.zip": "Win64",
-        prefix + "-linux-x86_64-cpu-only.tar.gz": "Linux-x86-64",
+    formats = {
+        "macos": ("-macos-arm64.zip", "MacOS"),
+        "windows": ("-windows-x86_64-cpu-only.zip", "Win64"),
+        "linux": ("-linux-x86_64-cpu-only.tar.gz", "Linux-x86-64"),
     }
+    return {prefix + formats[p][0]: formats[p][1] for p in selected_platforms(platform)}
+
+
+def manifest_names(platform):
+    selected_platforms(platform)
+    suffix = "" if platform == "all" else "-" + platform
+    return "release-manifest" + suffix + ".json", "SHA256SUMS" + suffix
+
+
+def write_manifests(directory, info):
+    directory = Path(directory)
+    manifest, checksums = manifest_names(info.get("platform", "all"))
+    (directory / manifest).write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    (directory / checksums).write_text(
+        "".join(f'{item["sha256"]}  {item["file"]}\n' for item in info["assets"]), encoding="utf-8")
+    return directory / manifest, directory / checksums
 
 
 def digest(path):
@@ -78,9 +106,10 @@ def check_archive(path, architecture, version):
 
 def validate_assets(directory, info):
     directory = Path(directory)
-    expected = distributions(info["version"])
+    platform = info.get("platform", "all")
+    expected = distributions(info["version"], platform)
     required = set(expected) | {name + ".sha256" for name in expected}
-    allowed = required | {"SHA256SUMS", "release-manifest.json"}
+    allowed = required | set(manifest_names(platform))
     actual = {path.name for path in directory.iterdir()}
     if actual - allowed or required - actual:
         raise ValueError(f"Release asset set mismatch: missing={sorted(required - actual)}, "
@@ -108,19 +137,16 @@ def main():
     parser.add_argument("--source", type=Path, default=Path(__file__).resolve().parent.parent)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--commit", required=True)
+    parser.add_argument("--platform", choices=("all",) + PLATFORMS, default="all")
     parser.add_argument("--directory", type=Path)
     args = parser.parse_args()
     try:
-        info = metadata(args.source, args.tag, args.commit)
+        info = metadata(args.source, args.tag, args.commit, args.platform)
         if args.mode == "assets":
             if args.directory is None:
                 raise ValueError("assets requires --directory")
             info = validate_assets(args.directory, info)
-            (args.directory / "release-manifest.json").write_text(
-                json.dumps(info, indent=2) + "\n", encoding="utf-8")
-            (args.directory / "SHA256SUMS").write_text(
-                "".join(f'{item["sha256"]}  {item["file"]}\n' for item in info["assets"]),
-                encoding="utf-8")
+            write_manifests(args.directory, info)
         print(json.dumps(info, indent=2))
     except (ValueError, OSError, KeyError, tarfile.TarError, zipfile.BadZipFile) as error:
         parser.exit(1, f"Release validation failed: {error}\n")

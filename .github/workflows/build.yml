@@ -1,13 +1,33 @@
-name: Build
+name: Run All Builds
 on:
   push:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      platform:
+        description: 'Internal platform selector'
+        type: string
+        default: all
 permissions:
   contents: read
 jobs:
+  scope:
+    name: Select platforms
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      platform: ${{ steps.scope.outputs.platform }}
+    steps:
+      - id: scope
+        env:
+          TARGET_PLATFORM: ${{ inputs.platform || 'all' }}
+        run: |
+          case "$TARGET_PLATFORM" in all|macos|windows|linux) ;; *) echo 'Unknown platform' >&2; exit 1;; esac
+          echo "platform=$TARGET_PLATFORM" >> "$GITHUB_OUTPUT"
   macos:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'macos' }}
     name: macOS arm64 / Metal + CPU
     runs-on: macos-15
     timeout-minutes: 25
@@ -46,6 +66,8 @@ jobs:
           retention-days: 14
 
   windows:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'windows' }}
     name: Windows x64 / CPU
     runs-on: windows-2022
     timeout-minutes: 25
@@ -85,6 +107,8 @@ jobs:
           retention-days: 14
 
   linux:
+    needs: scope
+    if: ${{ needs.scope.outputs.platform == 'all' || needs.scope.outputs.platform == 'linux' }}
     name: Linux x86_64 / CPU / glibc 2.28
     runs-on: ubuntu-22.04
     container: quay.io/pypa/manylinux_2_28_x86_64:latest
